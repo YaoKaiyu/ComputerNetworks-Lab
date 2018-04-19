@@ -269,10 +269,10 @@ static void stp_handle_config_packet(stp_t *stp, stp_port_t *p,
 		stp_port_send_config(p);
 }
 
-static void stp_dump_state()
+static void *stp_dump_state(void *arg)
 {
-  #define get_switch_id(switch_id) ((int)(switch_id & 0xFFFF))
-  #define get_port_id(port_id) ((int)(port_id & 0xFF))
+#define get_switch_id(switch_id) (int)(switch_id & 0xFFFF)
+#define get_port_id(port_id) (int)(port_id & 0xFF)
 
 	pthread_mutex_lock(&stp->lock);
 
@@ -298,6 +298,8 @@ static void stp_dump_state()
 	}
 
 	pthread_mutex_unlock(&stp->lock);
+
+	exit(0);
 }
 
 static void stp_handle_signal(int signal)
@@ -305,9 +307,8 @@ static void stp_handle_signal(int signal)
 	if (signal == SIGTERM) {
 		log(DEBUG, "received SIGTERM, terminate this program.");
 		
-		stp_dump_state();
-
-		exit(0);
+		pthread_t pid;
+		pthread_create(&pid, NULL, stp_dump_state, NULL);
 	}
 }
 
