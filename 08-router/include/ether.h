@@ -16,6 +16,8 @@ struct ether_header {
 	u16 ether_type;
 };
 
+typedef struct ether_header ether_header_t;
+
 #define ETHER_HDR_SIZE sizeof(struct ether_header)
 
 

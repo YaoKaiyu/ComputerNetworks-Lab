@@ -4,6 +4,7 @@
 #include "types.h"
 #include "checksum.h"
 #include "base.h"
+#include "ip.h"
 
 struct icmphdr {
 	u8	type;
@@ -41,6 +42,8 @@ struct icmphdr {
 /* Codes for TIME_EXCEEDED. */
 #define ICMP_EXC_TTL            0       /* TTL count exceeded           */
 
+// #define PACKET_TO_ICMP(packet) ((struct icmphdr *)packet+ETHER_HDR_SIZE+IP_BASE_HDR_SIZE)
+
 static inline u16 icmp_checksum(struct icmphdr *icmp, int len)
 {
 	u16 tmp = icmp->checksum;
@@ -49,6 +52,11 @@ static inline u16 icmp_checksum(struct icmphdr *icmp, int len)
 	icmp->checksum = tmp;
 
 	return sum;
+}
+
+static inline struct icmphdr *packet_to_icmp_hdr(const char *packet)
+{
+	return (struct icmphdr *)(packet + ETHER_HDR_SIZE + IP_BASE_HDR_SIZE);
 }
 
 void icmp_send_packet(const char *in_pkt, int len, u8 type, u8 code);

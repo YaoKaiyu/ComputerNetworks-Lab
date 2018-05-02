@@ -36,7 +36,7 @@ struct iphdr {
 };
 
 #define IP_BASE_HDR_SIZE sizeof(struct iphdr)
-#define IP_HDR_SIZE(hdr) (hdr->ihl * 4)
+#define IP_HDR_SIZE(hdr) ((hdr->ihl)<<2)
 #define IP_DATA(hdr)	((char *)hdr + IP_HDR_SIZE(hdr))
 
 #define IP_FMT	"%hhu.%hhu.%hhu.%hhu"
