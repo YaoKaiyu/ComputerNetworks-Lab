@@ -38,12 +38,15 @@ void handle_packet(iface_info_t *iface, char *packet, int len)
 	struct ether_header *eh = (struct ether_header *)packet;
 
 	// log(DEBUG, "got packet from %s, %d bytes, proto: 0x%04hx\n", 
-	// 		iface->name, len, ntohs(eh->ether_type));
+	// 		iface->name, len, ntohs(eh->ether_type)); 
+
 	switch (ntohs(eh->ether_type)) {
 		case ETH_P_IP:
+			log(DEBUG, "    is ip packet\n");
 			handle_ip_packet(iface, packet, len);
 			break;
 		case ETH_P_ARP:
+			log(DEBUG, "    is arp packet\n");
 			handle_arp_packet(iface, packet, len);
 			break;
 		default:
@@ -211,7 +214,6 @@ void ustack_run()
 	socklen_t addr_len = sizeof(addr);
 	char buf[ETH_FRAME_LEN];
 	int len;
-
 	while (1) {
 		int ready = poll(instance->fds, instance->nifs, -1);
 		if (ready < 0) {

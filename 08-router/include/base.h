@@ -10,7 +10,7 @@
 typedef struct {
 	struct list_head iface_list;
 	int nifs;
-	struct pollfd *fds;
+	struct pollfd *fds; 
 } ustack_t;
 
 extern ustack_t *instance;

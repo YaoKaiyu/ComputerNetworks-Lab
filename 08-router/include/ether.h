@@ -12,7 +12,7 @@
 
 struct ether_header {
 	u8 ether_dhost[ETH_ALEN];
-	u8 ether_shost[ETH_ALEN];
+	u8 ether_shost[ETH_ALEN]; 
 	u16 ether_type;
 };
 

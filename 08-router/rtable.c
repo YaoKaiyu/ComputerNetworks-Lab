@@ -16,7 +16,7 @@ rt_entry_t *new_rt_entry(u32 dest, u32 mask, u32 gw, iface_info_t *iface)
 {
 	rt_entry_t *entry = malloc(sizeof(*entry));
 	memset(entry, 0, sizeof(*entry));
-
+ 
 	init_list_head(&(entry->list));
 	entry->dest = dest;
 	entry->mask = mask;

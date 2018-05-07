@@ -13,7 +13,7 @@ class RouterTopo(Topo):
 
         self.addLink(h1, r1)
         self.addLink(h2, r1)
-        self.addLink(h3, r1)
+        self.addLink(h3, r1) 
 
 if __name__ == '__main__':
     topo = RouterTopo()

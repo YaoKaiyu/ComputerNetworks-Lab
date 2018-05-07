@@ -6,13 +6,12 @@
 #include "types.h"
 
 #define ARPHRD_ETHER 0x1
-#define ARP_PRO 0x8000
+#define ARP_PROTO 0x0800
 
 #define ARPOP_REQUEST 1
-#define ARPOP_REPLY 2
+#define ARPOP_REPLY 2 
 
-#define ARP_SIZE sizeof(struct ether_arp)
-#define GET_TO_ARP(packet) ((struct ether_arp *)(packet + ETHER_HDR_SIZE)) 
+#define ARP_SIZE sizeof(struct ether_arp) 
 
 struct ether_arp {
     u16 arp_hrd;    		/* Format of hardware address.  */
@@ -28,10 +27,14 @@ struct ether_arp {
 
 typedef struct ether_arp ether_arp_t;
 
-struct ether_arp *set_up_arp_header(iface_info_t *iface, u16 arp_op, 
-                                            u32 arp_spa, u32 arp_tpa);
-void handle_arp_packet(iface_info_t *info, char *pkt, int len);
 void arp_send_request(iface_info_t *iface, u32 dst_ip);
+void handle_arp_packet(iface_info_t *info, char *pkt, int len);
 void iface_send_packet_by_arp(iface_info_t *iface, u32 dst_ip, char *pkt, int len);
+void arp_init_header(ether_arp_t *arp, iface_info_t *iface, u16 op, u32 spa, u32 tpa);
+
+static inline struct ether_arp *packet_to_arp_hdr(const char *packet)
+{
+    return (struct ether_arp *)(packet + ETHER_HDR_SIZE);
+}
 
 #endif

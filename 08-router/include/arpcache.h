@@ -10,6 +10,9 @@
 #define MAX_ARP_SIZE 32
 #define ARP_ENTRY_TIMEOUT 15
 #define ARP_REQUEST_MAX_RETRIES	5
+ 
+#define CACHE_PKT_SIZE sizeof(struct cached_pkt)
+#define ARP_REQ_SIZE sizeof(struct arp_req)
 
 struct cached_pkt {
 	struct list_head list;

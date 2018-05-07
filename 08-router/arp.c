@@ -3,27 +3,25 @@
 #include "types.h"
 #include "packet.h"
 #include "ether.h"
+#include "ip.h"
 #include "arpcache.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// #include "log.h"
+// #include "log.h" 
 
 // set up an ARP header
-struct ether_arp *set_up_arp_header(iface_info_t *iface, u16 arp_op, 
-									       u32 arp_spa, u32 arp_tpa){
-	struct ether_arp *arp_info = (ether_arp_t *) malloc(ARP_SIZE);
-	arp_info->arp_hrd = htons(ARPHRD_ETHER);
-	arp_info->arp_pro = htons(ARP_PRO);
-	arp_info->arp_hln = 6;
-	arp_info->arp_pln = 4;
-	arp_info->arp_op  = htons(arp_op);
-	arp_info->arp_spa = htonl(arp_spa);
-	arp_info->arp_tpa = htonl(arp_tpa);
-	memcpy(arp_info->arp_sha, iface->mac, sizeof(u8)*ETH_ALEN);
-	return arp_info;
+void arp_init_header(ether_arp_t *arp, iface_info_t *iface, u16 op, u32 spa, u32 tpa){
+	arp->arp_hrd = htons(ARPHRD_ETHER);
+	arp->arp_pro = htons(ARP_PROTO);
+	arp->arp_hln = 6;
+	arp->arp_pln = 4;
+	arp->arp_op  = htons(op);
+	arp->arp_spa = htonl(spa);
+	arp->arp_tpa = htonl(tpa);
+	memcpy(arp->arp_sha, iface->mac, ETH_ALEN);
 }
 
 // send an arp request: encapsulate an arp request packet, send it out through
@@ -34,23 +32,22 @@ void arp_send_request(iface_info_t *iface, u32 dst_ip)
 	
 	// if dest mac is unknown, set it as 0x ff:ff:ff:ff:ff:ff
 	u8 dst_mac[ETH_ALEN];
-	memset(dst_mac, 1, sizeof(u8)*ETH_ALEN);
+	memset(dst_mac, 0xff, ETH_ALEN);
     
+    // printf(">> arp_send_request(): ether_info malloc()\n");
+    // set up a new packet
+	char *packet = (char *)malloc(ETHER_HDR_SIZE+ARP_SIZE);
+
     // set ether header string
-	ether_header_t *ether_info = (ether_header_t *)malloc(ETHER_HDR_SIZE);
-	ether_info->ether_type = htons(ETH_P_ARP);
-	memcpy(ether_info->ether_shost, iface->mac, sizeof(u8)*ETH_ALEN);
-	memcpy(ether_info->ether_dhost, dst_mac, sizeof(u8)*ETH_ALEN);
+	ether_header_t *eth_hdr = (ether_header_t *)packet;
+	eth_hdr->ether_type = htons(ETH_P_ARP);
+	memcpy(eth_hdr->ether_shost, iface->mac, ETH_ALEN);
+	memcpy(eth_hdr->ether_dhost, dst_mac, ETH_ALEN);
 
 	// set arp request protocol string
-	u32 arp_spa = iface->ip;
-	u32 arp_tpa = dst_ip;
-	ether_arp_t *arp_info = set_up_arp_header(iface, ARPOP_REQUEST, arp_spa, arp_tpa);
-
-	// format ARP Protocol string
-	char *packet = (char *)malloc(ETHER_HDR_SIZE+ARP_SIZE);
-	memcpy(packet, ether_info, ETHER_HDR_SIZE);
-	memcpy(packet+ETHER_HDR_SIZE, arp_info, ARP_SIZE);
+	ether_arp_t *arp_hdr = packet_to_arp_hdr(packet);
+	arp_init_header(arp_hdr, iface, ARPOP_REQUEST, iface->ip, dst_ip);
+	// printf("----> tpa -> "IP_FMT"\n", HOST_IP_FMT_STR(dst_ip));
 
 	// send packet through the provided iface
 	iface_send_packet(iface, packet, ETHER_HDR_SIZE+ARP_SIZE);
@@ -60,16 +57,22 @@ void arp_send_request(iface_info_t *iface, u32 dst_ip)
 // through iface_send_packet
 void arp_send_reply(iface_info_t *iface, struct ether_arp *req_hdr)
 {
-    // set ether header string
-	ether_header_t *ether_info = (ether_header_t *)malloc(ETHER_HDR_SIZE);
-	ether_info->ether_type = htons(ETH_P_ARP);
-	memcpy(ether_info->ether_shost, iface->mac, sizeof(u8)*ETH_ALEN);
-	memcpy(ether_info->ether_dhost, req_hdr->arp_tha, sizeof(u8)*ETH_ALEN);	
-	
-	// format ARP Protocol string
+    // printf(">> arp_send_reply(): ether_info malloc()\n");
 	char *packet = (char *)malloc(ETHER_HDR_SIZE+ARP_SIZE);
-	memcpy(packet, ether_info, ETHER_HDR_SIZE);
-	memcpy(packet+ETHER_HDR_SIZE, req_hdr, ARP_SIZE);
+    
+    // set ether header string
+	ether_header_t *eth_hdr = (ether_header_t *)packet;
+	eth_hdr->ether_type = htons(ETH_P_ARP);
+	memcpy(eth_hdr->ether_shost, iface->mac, ETH_ALEN);
+	memcpy(eth_hdr->ether_dhost, req_hdr->arp_sha, ETH_ALEN);	
+
+	// set arp reply protocol string
+	u32 reply_tpa = ntohl(req_hdr->arp_spa);
+	ether_arp_t *reply_hdr = packet_to_arp_hdr(packet);
+	arp_init_header(reply_hdr, iface, ARPOP_REPLY, iface->ip, reply_tpa);
+	memcpy(reply_hdr->arp_tha, req_hdr->arp_sha, ETH_ALEN);
+
+	// printf("----> reply: tha => "IP_FMT"\n", HOST_IP_FMT_STR(reply_tpa));
 
 	// send packet through the provided iface
 	iface_send_packet(iface, packet, ETHER_HDR_SIZE+ARP_SIZE);	
@@ -78,40 +81,22 @@ void arp_send_reply(iface_info_t *iface, struct ether_arp *req_hdr)
 void handle_arp_packet(iface_info_t *iface, char *packet, int len)
 {
 	// fprintf(stderr, "TODO: process arp packet: arp request & arp reply.\n");
+	// fprintf(stderr, "DEBUG: process arp packet:\n");
 
 	// resolve the received packet
-	ether_arp_t *arp_info = GET_TO_ARP(packet);
-	u16 arp_op = ntohs(arp_info->arp_op);
-
+	ether_arp_t *arp = packet_to_arp_hdr(packet);
+	u32 tpa = ntohl(arp->arp_tpa);
 	// handle different arp operations
-	switch(arp_op){
+	switch(ntohs(arp->arp_op)){
 		case ARPOP_REQUEST:
-			if(ntohl(arp_info->arp_tpa) == iface->ip) {
-				u32 arp_spa = iface->ip;
-				u32 arp_tpa = arp_info->arp_spa;
-				ether_arp_t *req_hdr = set_up_arp_header(iface, ARPOP_REPLY,
-											             arp_spa,  arp_tpa);
-				memcpy(req_hdr->arp_tha, arp_info->arp_sha, sizeof(u8)*ETH_ALEN);
-				// send the reply arp message
-				arp_send_reply(iface, req_hdr);	
-			}
-			else{
-				int found = arpcache_lookup(arp_info->arp_tpa, arp_info->arp_tha);
-				if(!found)
-					arp_send_request(iface, arp_info->arp_tpa);
-				else{
-					u32 arp_spa = iface->ip;
-					u32 arp_tpa = arp_info->arp_spa;
-					ether_arp_t *req_hdr = set_up_arp_header(iface, ARPOP_REPLY,
-												             arp_spa,  arp_tpa);
-					memcpy(req_hdr->arp_tha, arp_info->arp_sha, sizeof(u8)*ETH_ALEN);
-					// send the reply arp message
-					arp_send_reply(iface, req_hdr);				
-				}
+			if(tpa == iface->ip){
+				arp_send_reply(iface, arp);	
+				arpcache_insert(arp->arp_spa, arp->arp_sha);	
 			}
 			break;
 		case ARPOP_REPLY:
-			arpcache_insert(arp_info->arp_spa, arp_info->arp_sha);
+	        if (tpa == iface->ip)
+				arpcache_insert(arp->arp_spa, arp->arp_sha);	
 			break;
 		default:
 			// log(ERROR, "Unknown arp operation type, ingore it.");
@@ -128,6 +113,7 @@ void handle_arp_packet(iface_info_t *iface, char *packet, int len)
 void iface_send_packet_by_arp(iface_info_t *iface, u32 dst_ip, char *packet, int len)
 {
 	struct ether_header *eh = (struct ether_header *)packet;
+	// printf(">> iface_send_packet_by_arp(): packet ptr(in) = %p\n", packet);
 	memcpy(eh->ether_shost, iface->mac, ETH_ALEN);
 	eh->ether_type = htons(ETH_P_IP);
 
@@ -135,11 +121,14 @@ void iface_send_packet_by_arp(iface_info_t *iface, u32 dst_ip, char *packet, int
 	int found = arpcache_lookup(dst_ip, dst_mac);
 	if (found) {
 		// log(DEBUG, "found the mac of %x, send this packet", dst_ip);
+		// fprintf(stderr, ">>> found the mac of "IP_FMT", send this packet\n", HOST_IP_FMT_STR(dst_ip));
+		// printf(">>> iface_send_packet_by_arp(): packet ptr = %p\n", packet);
 		memcpy(eh->ether_dhost, dst_mac, ETH_ALEN);
 		iface_send_packet(iface, packet, len);
 	}
 	else {
 		// log(DEBUG, "lookup %x failed, pend this packet", dst_ip);
+		// fprintf(stderr, ">>> lookup "IP_FMT" failed, append this packet\n", HOST_IP_FMT_STR(dst_ip));
 		arpcache_append_packet(iface, dst_ip, packet, len);
 	}
 }

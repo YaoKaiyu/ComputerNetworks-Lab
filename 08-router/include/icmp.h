@@ -16,7 +16,7 @@ struct icmphdr {
 			u16 sequence;
 		} is;
 		struct {
-			u16 unused;
+			u16 unused; 
 			u16 mtu;
 		} um;
 	} u;
@@ -54,9 +54,9 @@ static inline u16 icmp_checksum(struct icmphdr *icmp, int len)
 	return sum;
 }
 
-static inline struct icmphdr *packet_to_icmp_hdr(const char *packet)
+static inline struct icmphdr *packet_to_icmp_hdr(const char *packet, struct iphdr *hdr)
 {
-	return (struct icmphdr *)(packet + ETHER_HDR_SIZE + IP_BASE_HDR_SIZE);
+	return (struct icmphdr *)(packet + ETHER_HDR_SIZE + IP_HDR_SIZE(hdr));
 }
 
 void icmp_send_packet(const char *in_pkt, int len, u8 type, u8 code);

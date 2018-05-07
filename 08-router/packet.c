@@ -25,6 +25,6 @@ void iface_send_packet(iface_info_t *iface, char *packet, int len)
 				sizeof(struct sockaddr_ll)) < 0) {
  		perror("Send raw packet failed");
 	}
-
+	
 	free(packet);
 }

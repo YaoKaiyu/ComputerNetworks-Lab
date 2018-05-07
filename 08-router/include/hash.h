@@ -15,7 +15,7 @@ static inline u8 hash8(char *addr, int len)
 
 	return result;
 }
-
+ 
 static inline u16 hash16(char *addr, int len)
 {
 	u16 result = 0;

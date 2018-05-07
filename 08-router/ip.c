@@ -5,11 +5,12 @@
 #include "rtable.h"
 #include "arp.h"
 
-#include "log.h"
+// #include "log.h"
 
 #include <stdlib.h>
+#include <string.h>
 
-// initialize ip header 
+// initialize ip header  
 void ip_init_hdr(struct iphdr *ip, u32 saddr, u32 daddr, u16 len, u8 proto)
 {
 	ip->version = 4;
@@ -27,18 +28,16 @@ void ip_init_hdr(struct iphdr *ip, u32 saddr, u32 daddr, u16 len, u8 proto)
 
 // lookup in the routing table, to find the entry with the same and longest prefix.
 // the input address is in host byte order
-rt_entry_t *longest_prefix_match(u32 dst)
-{
+rt_entry_t *longest_prefix_match(u32 dst){
 	// fprintf(stderr, "TODO: longest prefix match for the packet.\n");
-	u32 entry_addr = 0, dst_addr = 0;
+	u32 entry_addr = 0, dst_addr = 0, mask = 0;
 	rt_entry_t *entry = NULL, *desired_entry = NULL;
 	list_for_each_entry(entry, &rtable, list){
 		entry_addr = entry->dest & entry->mask;
 		dst_addr   = dst         & entry->mask;
-		if(dst_addr == entry_addr){
-			if((!desired_entry) || 
-			   ( desired_entry  && (desired_entry->mask < entry->mask)))
+		if((dst_addr == entry_addr) && (mask < entry->mask)){
 				desired_entry = entry;
+				mask = entry->mask;
 		}
 	}
 	return desired_entry;
@@ -51,7 +50,7 @@ rt_entry_t *longest_prefix_match(u32 dst)
 void ip_forward_packet(u32 ip_dst, char *packet, int len)
 {
 	// fprintf(stderr, "TODO: forward ip packet.\n");
-	
+	// printf("DEBUG:  handle_ip_packet --> forward packet.\n");
 	// check the TTL
 	struct iphdr *ip = packet_to_ip_hdr(packet);
 	if((--ip->ttl) <= 0){
@@ -59,25 +58,33 @@ void ip_forward_packet(u32 ip_dst, char *packet, int len)
 		free(packet);
 		return ;
 	}
-	// update the checksum
-	ip->checksum = ip_checksum(ip);
 
 	// look up router table to find the rt_entry
 	rt_entry_t *entry = longest_prefix_match(ip_dst);
 	if (!entry) {
-		log(ERROR, "Could not find forwarding rule for IP (dst:"IP_FMT") packet.", 
-				HOST_IP_FMT_STR(ip_dst));
-		icmp_send_packet(packet, len, 3, 0);
+		// log(ERROR, "Could not find forwarding rule for IP (dst:"IP_FMT") packet.", 
+		// 		HOST_IP_FMT_STR(ip_dst));
+		// printf("Could not find forwarding rule for IP (dst:"IP_FMT") packet.", 
+		// 		HOST_IP_FMT_STR(ip_dst));
+		// printf("router table is unreachable.\n");
+		icmp_send_packet(packet, len, ICMP_DEST_UNREACH, ICMP_NET_UNREACH);
 		free(packet);
 		return ;
 	}
+	// printf("ip_forward_packet: dst ip: "IP_FMT"\n", HOST_IP_FMT_STR(entry->dest));
 
 	// determine the next hop to forward the packet
-	u32 next_hop = (entry->gw == 0) ? 0 : ip_dst;
+	u32 next_hop = (!entry->gw) ? ip_dst : entry->gw;
+	// printf("Next Hop  is "IP_FMT"\n", HOST_IP_FMT_STR(next_hop));
 
 	// update the source mac address in packet as the mac address of the forward port
-	ether_header_t *eh = (ether_header_t *)packet;
-	memcpy(eh->ether_shost, entry->iface->mac, sizeof(u8)*ETH_ALEN);
+	ether_header_t *eth = (ether_header_t *)packet;
+	eth->ether_type = htons(ETH_P_IP);
+	memcpy(eth->ether_shost, entry->iface->mac, ETH_ALEN);
+
+	// update the checksum
+	ip->checksum = ip_checksum(ip);
+
 	iface_send_packet_by_arp(entry->iface, next_hop, packet, len);	
 }
 
@@ -89,13 +96,20 @@ void ip_forward_packet(u32 ip_dst, char *packet, int len)
 void handle_ip_packet(iface_info_t *iface, char *packet, int len)
 {
 	// fprintf(stderr, "TODO: handle ip packet: echo the ping packet, and forward other IP packets.\n");
+	// fprintf(stderr, "DEBUG: handle ip packet.\n");
 	struct iphdr *ip = packet_to_ip_hdr(packet);
 	u32 dst_ip = ntohl(ip->daddr);
-	struct icmphdr *icmp = packet_to_icmp_hdr(packet);
-	if((dst_ip == iface->ip) && (icmp->type == ICMP_ECHOREQUEST))
-		icmp_send_packet(packet, len, ICMP_ECHOREPLY, 0);
-	else
-		ip_forward_packet(dst_ip, packet, len);
+
+    if (ip->protocol == IPPROTO_ICMP) {
+		struct icmphdr *icmp = packet_to_icmp_hdr(packet, ip);
+		if((dst_ip == iface->ip) && (icmp->type == ICMP_ECHOREQUEST)){
+			// printf("DEBUG:  handle_ip_packet --> ping local port.\n");
+			icmp_send_packet(packet, len, ICMP_ECHOREPLY, 0);
+			free(packet);
+			return ;
+		}
+	}
+	ip_forward_packet(dst_ip, packet, len);
 }
 
 // send IP packet
@@ -104,12 +118,15 @@ void handle_ip_packet(iface_info_t *iface, char *packet, int len)
 // router itself. This function is used to send ICMP packets.
 void ip_send_packet(char *packet, int len)
 {
+	// printf(">> ip_send_packet(): packet ptr (in) = %p\n", packet);
 	struct iphdr *ip = packet_to_ip_hdr(packet);
 	u32 dst = ntohl(ip->daddr);
 	rt_entry_t *entry = longest_prefix_match(dst);
 	if (!entry) {
-		log(ERROR, "Could not find forwarding rule for IP (dst:"IP_FMT") packet.", 
-				HOST_IP_FMT_STR(dst));
+		// log(ERROR, "Could not find forwarding rule for IP (dst:"IP_FMT") packet.", 
+		// 		HOST_IP_FMT_STR(dst));
+		// printf("!!!!!!!\n!!!!!!    Could not find forwarding rule for IP (dst:"IP_FMT") packet.\n!!!!!!!!\n", 
+		// 		HOST_IP_FMT_STR(dst));
 		free(packet);
 		return ;
 	}
@@ -119,8 +136,9 @@ void ip_send_packet(char *packet, int len)
 		next_hop = dst;
 
 	struct ether_header *eh = (struct ether_header *)packet;
-	eh->ether_type = ntohs(ETH_P_IP);
+	eh->ether_type = htons(ETH_P_IP);
 	memcpy(eh->ether_shost, entry->iface->mac, ETH_ALEN);
 
+	// printf(">> ip_send_packet(): packet ptr (pass) = %p\n", packet);
 	iface_send_packet_by_arp(entry->iface, next_hop, packet, len);
 }
