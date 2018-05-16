@@ -16,6 +16,24 @@
 #define TCP_ESTABLISHED_TIMEOUT	60		// if the tcp connection does not transmit any packet 
                                         // in 60 seconds, it is regarded as finished
 
+#define NAT_MAPPING_SIZE sizeof(struct nat_mapping)
+#define NAT_CONNECTION_SIZE sizeof(struct nat_connection)
+
+#define IS_INTERNAL_IP(addr) \
+	(longest_prefix_match((addr))->iface->ip == nat.internal_iface->ip)
+#define IS_EXTERNAL_IP(addr) \
+	(longest_prefix_match((addr))->iface->ip == nat.external_iface->ip)
+
+#define IS_DIR_IN(saddr,daddr) \
+	(daddr == nat.external_iface->ip) && IS_EXTERNAL_IP(saddr)
+#define IS_DIR_OUT(saddr,daddr) \
+	IS_INTERNAL_IP(saddr) && IS_EXTERNAL_IP(daddr)
+
+#define NAT_MAPPING_MATCH_IN(mapping_entry,ip,port) \
+	(((mapping_entry)->internal_ip == (ip)) && ((mapping_entry)->internal_port == (port)))
+#define NAT_MAPPING_MATCH_EX(mapping_entry,ip,port) \
+	(((mapping_entry)->external_ip == (ip)) && ((mapping_entry)->external_port == (port)))
+
 // DIR_IN is direction that packet from public network to private network, 
 // DIR_OUT is direction that packet from private network to public network
 enum packet_dir { DIR_IN = 1, DIR_OUT, DIR_INVALID };

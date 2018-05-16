@@ -10,15 +10,6 @@
 #include <unistd.h>
 #include <signal.h>
 
-#define IS_INTERNAL_IP(ip) (longest_prefix_match((ip))->iface->ip == nat.internal_iface->ip)
-#define IS_EXTERNAL_IP(ip) (longest_prefix_match((ip))->iface->ip == nat.external_iface->ip)
-
-#define NAT_MAPPING_MATCH_IN(mapping_entry,ip,port) \
-		(((mapping_entry)->internal_ip == (ip)) && ((mapping_entry)->internal_port == (port)))
-#define NAT_MAPPING_MATCH_EX(mapping_entry,ip,port) \
-		(((mapping_entry)->external_ip == (ip)) && ((mapping_entry)->external_port == (port)))
-
-
 static struct nat_table nat;
 
 // get the interface from iface name
@@ -39,26 +30,22 @@ static int get_packet_direction(char *packet)
 {
 	//fprintf(stdout, "TODO: determine the direction of this packet.\n");
 	struct iphdr *ip = packet_to_ip_hdr(packet);
-	u32 ip_saddr = ntohl(ip->saddr);
-	u32 ip_daddr = ntohl(ip->daddr);
+	u32 saddr = ntohl(ip->saddr);
+	u32 daddr = ntohl(ip->daddr);
 
-	if(IS_INTERNAL_IP(ip_saddr)){
-		if(IS_EXTERNAL_IP(ip_daddr))
-			return DIR_OUT;
-	}
-
-	if(IS_EXTERNAL_IP(ip_saddr)){
-		if(IS_INTERNAL_IP(ip_daddr))
-			return DIR_IN;
-	}
-
-	return DIR_INVALID;
+	if(IS_DIR_OUT(saddr,daddr))
+		return DIR_OUT;
+	else if(IS_DIR_IN(saddr,daddr))
+		return DIR_IN;
+	else
+		return DIR_INVALID;
 }
 
 u16 assign_external_port(){
-	u16 random;
+	u16 random = 0;
+	int bound = NAT_PORT_MAX - NAT_PORT_MIN;
 	while(1){
-		random = NAT_PORT_MIN + rand() % (NAT_PORT_MAX-NAT_PORT_MIN); // NAT_PORT_MIN~NAT_PORT_MAX
+		random = NAT_PORT_MIN + rand() % bound; // NAT_PORT_MIN ~ NAT_PORT_MAX
 		if(nat.assigned_ports[random] == 0)
 			break;
 	}
@@ -66,12 +53,57 @@ u16 assign_external_port(){
 	return random;
 }
 
+u8 caculate_hash8(u16 serv_port, u32 serv_ip){
+	char buf[6];	
+	memcpy(buf, &serv_ip, 4);
+	memcpy(buf+4, &serv_port, 2);
+	return hash8(buf, 6);
+}
+
+struct nat_mapping *init_new_mapping(u32 saddr, u16 sport, u16 new_port){
+	struct nat_mapping *new = (struct nat_mapping *)malloc(NAT_MAPPING_SIZE);
+	new->internal_ip = saddr;
+	new->internal_port = sport;
+	new->external_ip = (nat.external_iface)->ip;
+	new->external_port = new_port;
+	new->update_time = time(NULL);
+	bzero(&(new->conn), NAT_CONNECTION_SIZE);	
+	return new;
+}
+
+void update_ip_and_tcp_header(char *packet, u32 addr, u16 port, int dir){
+	struct iphdr *ip_hdr = packet_to_ip_hdr(packet);
+	struct tcphdr *tcp_hdr = packet_to_tcp_hdr(packet);
+	if(dir == DIR_IN){
+		ip_hdr->daddr  = htonl(addr);
+		tcp_hdr->dport = htons(port);
+	} 
+	else{
+		ip_hdr->saddr  = htonl(addr);
+		tcp_hdr->sport = htons(port);
+	}
+	tcp_hdr->checksum = tcp_checksum(ip_hdr, tcp_hdr);
+	ip_hdr->checksum  = ip_checksum(ip_hdr);
+}
+
+void recover_unused_conn(struct nat_mapping *pos, struct tcphdr *tcp){
+	if(tcp->flags == TCP_FIN + TCP_ACK)
+		(pos->conn).external_fin = 1;
+
+	if(tcp->flags == TCP_RST){
+		printf("RST!\n");
+		if((pos->conn).internal_fin + (pos->conn).external_fin == 2){
+			nat.assigned_ports[pos->external_port] = 0;
+			list_delete_entry(&(pos->list));
+		}
+	}
+}
+
 // do translation for the packet: replace the ip/port, recalculate ip & tcp
 // checksum, update the statistics of the tcp connection
 void do_translation(iface_info_t *iface, char *packet, int len, int dir)
 {
 	// fprintf(stdout, "TODO: do translation for this packet.\n");
-	char buf[6];	
 	struct iphdr *ip_hdr = packet_to_ip_hdr(packet);
 	struct tcphdr *tcp_hdr = packet_to_tcp_hdr(packet);
 	u16 sport = ntohs(tcp_hdr->sport);
@@ -81,33 +113,33 @@ void do_translation(iface_info_t *iface, char *packet, int len, int dir)
 	// find out whether there exists nat mapping
 	u32 serv_ip = (dir == DIR_IN) ? saddr : daddr;
 	u16 serv_port = (dir == DIR_IN) ? sport : dport;
-	memcpy(buf, &serv_ip, 4);
-	memcpy(buf+4, &serv_port, 2);
-	u8 hash_value = hash8(buf, 6);
-	struct nat_mapping mapping_entry = nat.nat_mapping_list[hash_value];
+	u8  hash_value = caculate_hash8(serv_port, serv_ip);
+	struct list_head * mapping_entry = &(nat.nat_mapping_list[hash_value]);
 	pthread_mutex_lock(&nat.lock);
 	struct nat_mapping * pos = NULL, *q = NULL;
 	if(!list_empty(mapping_entry)){
-		list_for_each_entry_safe(pos, q, &mapping_entry, list){
-			if(dir == DIR_OUT && NAT_MAPPING_MATCH_IN(pos,match_ip,match_port)){
+		list_for_each_entry_safe(pos, q, mapping_entry, list){
+			if(dir == DIR_OUT && NAT_MAPPING_MATCH_IN(pos,saddr,sport)){
 				printf("OUT: ip and port mapping matches.\n");
-				ip_hdr->saddr = htonl(nat.external_iface);
-				tcp_hdr->sport = htons(pos->external_port);
-				tcp_hdr->checksum = tcp_checksum(ip_hdr, tcp_hdr);
-				ip_hdr->checksum = ip_checksum(ip_hdr);
+				update_ip_and_tcp_header(packet, 
+										 nat.external_iface->ip, 
+										 pos->external_port, 
+										 DIR_OUT);
 				pos->update_time = time(NULL);
 				ip_send_packet(packet, len);
+				recover_unused_conn(pos, tcp_hdr);
 				pthread_mutex_unlock(&nat.lock);
 				return ;
 			} 
-			else if(dir == DIR_IN && NAT_MAPPING_MATCH_EX(pos,match_ip,match_port)){
+			else if(dir == DIR_IN && NAT_MAPPING_MATCH_EX(pos,daddr,dport)){
 				printf("IN: ip and port mapping matches.\n");
-				ip_hdr->saddr = htonl(pos->internal_ip);
-				tcp_hdr->sport = htons(pos->internal_port);
-				tcp_hdr->checksum = tcp_checksum(ip_hdr, tcp_hdr);
-				ip_hdr->checksum = ip_checksum(ip_hdr);
+				update_ip_and_tcp_header(packet, 
+										 pos->internal_ip, 
+										 pos->internal_port, 
+										 DIR_IN);
 				pos->update_time = time(NULL);
 				ip_send_packet(packet, len);
+				recover_unused_conn(pos, tcp_hdr);
 				pthread_mutex_unlock(&nat.lock);
 				return ;
 			}
@@ -116,21 +148,15 @@ void do_translation(iface_info_t *iface, char *packet, int len, int dir)
 	// nat mapping does not find (OUT)
 	// assign a new port and build a new connection
 	u16 new_port = assign_external_port();
-	struct nat_mapping *new_mapping = (struct nat_mapping *)malloc(sizeof(*new_mapping));
-	new_mapping->internal_ip = saddr;
-	new_mapping->internal_port = sport;
-	new_mapping->external_ip = (nat.external_iface)->ip;
-	new_mapping->external_port = new_port;
-	new_mapping->update_time = time(NULL);
-	bzero(&(new_mapping->conn), sizeof(struct nat_connection));
-	list_add_tail(&(new_mapping->list), &mapping_entry);
+	struct nat_mapping *new_mapping = init_new_mapping(saddr,sport,new_port);
+	list_add_tail(&(new_mapping->list), mapping_entry);
 	// update saddr, sport and checksum of tcp header and ip header
-	ip_hdr->saddr = htonl((nat.external_iface)->ip);
-	tcp_hdr->sport = htons(new_port);
-	tcp_hdr->checksum = tcp_checksum(ip_hdr, tcp_hdr);
-	ip_hdr->checksum = ip_checksum(ip_hdr);
-	ip_send_packet(packet, len);	
+	update_ip_and_tcp_header(packet, 
+							 (nat.external_iface)->ip, 
+							 new_port, 
+							 DIR_OUT);
 	pthread_mutex_unlock(&nat.lock);
+	ip_send_packet(packet, len);	
 	return ;
 }
 
@@ -154,32 +180,28 @@ void nat_translate_packet(iface_info_t *iface, char *packet, int len)
 	do_translation(iface, packet, len, dir);
 }
 
-int is_to_be_recovered(struct nat_mapping *pos, time_t now){
-	if((now - pos->update_time) > TCP_ESTABLISHED_TIMEOUT)
-		return 1;
-	// if()
-	// 	return 1;
-	return 0;
-}
-
 // nat timeout thread: find the finished flows, remove them and free port
 // resource
 void *nat_timeout()
 {
 	struct nat_mapping *pos = NULL, *q = NULL;
-	struct nat_mapping mapping_entry;
+	struct list_head *mapping_entry = NULL;
 	time_t now = 0;
-	bzero(mapping_entry, sizeof(mapping_entry));
 	while (1) {
 		// fprintf(stdout, "TODO: sweep finished flows periodically.\n");
-		// pthread_mutex_lock(&nat.lock);
-		// now = time(NULL);
-		// for(int i = 0; i < HASH_8BITS; i++){
-		// 	mapping_entry = nat.nat_mapping_list[i];
-		// 	list_for_each_entry_safe(pos, q, &mapping_entry, list){
-		// 	}
-		// }
-		// pthread_mutex_unlock(&nat.lock);
+		pthread_mutex_lock(&nat.lock);
+		now = time(NULL);
+		for(int i = 0; i < HASH_8BITS; i++){
+			mapping_entry = &(nat.nat_mapping_list[i]);
+			list_for_each_entry_safe(pos, q, mapping_entry, list){
+				if((now - pos->update_time) > TCP_ESTABLISHED_TIMEOUT){
+					printf("Remove aged connections.\n");
+					nat.assigned_ports[pos->external_port] = 0;
+					list_delete_entry(&(pos->list));
+				}
+			}
+		}
+		pthread_mutex_unlock(&nat.lock);
 		sleep(1);
 	}
 
