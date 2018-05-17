@@ -1,3 +1,6 @@
+#for MacOS
+.DS_Store
+
 # Prerequisites
 *.d
 
