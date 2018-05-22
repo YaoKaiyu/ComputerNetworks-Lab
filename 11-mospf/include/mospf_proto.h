@@ -23,6 +23,9 @@
 	(ETHER_HDR_SIZE + IP_BASE_HDR_SIZE + \
 	 MOSPF_HDR_SIZE + MOSPF_LSU_SIZE   + (num) * MOSPF_LSA_SIZE)
 
+#define HELLO_PACKET_LEN \
+	(ETHER_HDR_SIZE + IP_BASE_HDR_SIZE + MOSPF_HDR_SIZE + MOSPF_HELLO_SIZE)
+
 struct mospf_hdr {
 	u8		version;
 	u8		type;
