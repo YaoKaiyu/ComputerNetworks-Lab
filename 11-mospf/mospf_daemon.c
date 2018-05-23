@@ -1,3 +1,11 @@
+/*---------------------------------------------------*/
+// Filename      : mospf_daemon.c 
+// Author        : wujiahao
+// Email         : wujiahao15@mails.ucas.ac.cn
+// Created  Time : 2018-05-20 15:32:49
+// Modified Time : 2018-05-23 20:39:11
+/*---------------------------------------------------*/
+
 #include "mospf_daemon.h"
 #include "mospf_proto.h"
 #include "mospf_nbr.h"
