@@ -3,7 +3,7 @@
 // Author        : wujiahao
 // Email         : wujiahao15@mails.ucas.ac.cn
 // Created  Time : 2018-05-20 15:32:49
-// Modified Time : 2018-05-23 20:39:11
+// Modified Time : 2018-05-24 17:43:24
 /*---------------------------------------------------*/
 
 #include "mospf_daemon.h"
@@ -49,7 +49,7 @@ void mospf_init() {
 void *sending_mospf_hello_thread(void *param);
 void *sending_mospf_lsu_thread(void *param);
 void *checking_nbr_thread(void *param);
-void *dump_database(void *param);
+void *dumping_database(void *param);
 void send_mospf_lsu();
 
 void mospf_run() {
