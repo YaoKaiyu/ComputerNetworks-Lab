@@ -43,15 +43,15 @@ mininet> exit
 
 * 图一：实验数据库结果输出
 
-![image-20180524162048609](/Users/apple/Learning/CS/CN/Lab/11/1.png)
+![image-1](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/11/1.png)
 
 * 图一中的输出结果格式为:
 > **rid** 
 
-    > neighbours (**SUBNET, MASK, neighbour's RID**)
+> neighbours (**SUBNET, MASK, neighbour's RID**)
 
 * 图二：此次实验网络拓扑图
-![image-20180524172814806](/Users/apple/Learning/CS/CN/Lab/11/2.png)
+![image-2](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/11/2.png)
 
 ## 四、结果分析
 
