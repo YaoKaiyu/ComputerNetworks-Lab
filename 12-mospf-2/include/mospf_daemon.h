@@ -10,7 +10,7 @@
 #include <stdbool.h>
 
 #define MAX_NODE_NUM 10
-#define INT_MAX 256
+#define INT_MAX 255
 
 #define NEED_UPDATE_PATH(visited,graph,dist,u,v) \
 ((visited[v] == false) && \

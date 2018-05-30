@@ -68,14 +68,16 @@ void mospf_run() {
     pthread_create(&hello, NULL, sending_mospf_hello_thread, NULL);
     pthread_create(&lsu, NULL, sending_mospf_lsu_thread, NULL);
     pthread_create(&nbr, NULL, checking_nbr_thread, NULL);
-    pthread_create(&db, NULL, dumping_database, NULL);
+    // pthread_create(&db, NULL, dumping_database, NULL);
     pthread_create(&rtable, NULL, generating_mospf_rtable, NULL);
 }
 
 void *generating_mospf_rtable(void *param){
     while(1){
+        sleep(10);
+        printf("\n================= database2rtable - Start =========================\n");
         database2rtable();
-        sleep(5);
+        printf("\n================= database2rtable - End   =========================\n");
     }
     return NULL;
 }
@@ -362,7 +364,8 @@ void handle_mospf_lsu(iface_info_t *iface, char *packet, int len) {
         list_for_each_entry_safe(iface, iface_q, &(instance->iface_list), list)
             if (!list_empty(&(iface->nbr_list))) {
                 list_for_each_entry_safe(nbr_entry, nbr_q, &(iface->nbr_list), list)
-                    if (nbr_entry->nbr_ip != ntohl(ip->saddr) && nbr_entry->nbr_id != ntohl(mospf->rid)) { // avoid sending packet back to source
+                    if (nbr_entry->nbr_ip != ntohl(ip->saddr) && nbr_entry->nbr_id != ntohl(mospf->rid)) { 
+                        // avoid sending packet back to source
                         out_packet = (char *)malloc(len);
                         if (!out_packet) {printf("handle_mospf_lsu: out_packet malloc error.\n"); exit(-1);}
                         memcpy(out_packet, packet, len);
@@ -415,21 +418,34 @@ void handle_mospf_packet(iface_info_t *iface, char *packet, int len) {
 }
 
 int database2graph() {
-    int num = 1;
+    int num = 0, x = -1, y = -1;
     mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
     init_graph();
     num2id[num++] = instance->router_id;
     if (!list_empty(&mospf_db)) {
         list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list)
             num2id[num++] = db_entry->rid;
-        for (int i = 0; i < num; i++)
-            for (int j = i + 1; j < num; j++)
-                if (is_connected(num2id[i], num2id[j])) {
-                    graph[i][j] = 1;
-                    graph[j][i] = 1;
-                }
     } else
         printf("Database is currently empty.\n");
+    if (!list_empty(&mospf_db)) {
+        list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list) {
+            for (int i = 0; i < db_entry->nadv; i++) {
+                x = id2num(db_entry->array[i].rid, num);
+                y = id2num(db_entry->rid, num);
+                graph[x][y] = 1;
+                graph[y][x] = 1;
+            }
+        }
+    }
+    for(int i = 0; i < num; i++) {
+        printf("%d: "IP_FMT"\n", i, HOST_IP_FMT_STR(num2id[i]));
+    }
+    printf("graph:\n");
+    for(int i = 0; i < num; i++) {
+        for(int j = 0; j < num; j++)
+            printf("%2d ", graph[i][j]);
+        printf("\n");
+    }
     return num;
 }
 
@@ -441,49 +457,64 @@ int min_dist(int num) {
             min = dist[i];
             node_rank = i;
         }
+    if(node_rank == -1) printf("fffffffffuck\n");
     return node_rank;
 }
 
 void caculate_shortest_path(int num) {
     for (int i = 0; i < num; i++) {
         prev[i] = -1;
-        dist[i] = INT_MAX;
+        dist[i] = graph[0][i];
         visited[i] = false;
     }
 
     dist[0] = 0;
     visited[0] = true;
 
-    int u = 0;
+    int u = 0, tmp = 0;
     for (int i = 0; i < num - 1; i++) {
         u = min_dist(num);
         visited[u] = true;
-        for (int v = 0; v < num; v++)
+        printf("min = %d\n", dist[u]);
+        for (int v = 0; v < num; v++) {
+            printf("graph[u][v] = %d\n", graph[u][v]);
             if (NEED_UPDATE_PATH(visited, graph, dist, u, v)) {
+                printf("update\n");
                 dist[v] = dist[u] + graph[u][v];
                 prev[v] = u;
             }
+            // tmp = ((graph[u][v] == INT_MAX) ? INT_MAX : (dist[u] + graph[u][v]));
+            // if ((visited[v] == false) && (tmp < dist[v])) {
+            //     dist[v] = tmp;
+            //     prev[v] = u;
+            // }
+        }
     }
 }
 
+void swap(int *a, int *b){
+    int tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
 void path2rtable(int num) {
-    int tmp = 0, hop = -1, s = 0;
+    int hop = -1, s = 0;
     // sort dist as up order
-    int sorted[num];
-    for (int i = 0; i < num; i++)
-        sorted[i] = i;
+    int sorted[num], bak[num];
+    for(int i = 0; i < num; i++) sorted[i] = i;
+    memcpy(bak, dist, num * sizeof(int));
     for (int i = 0; i < num - 1; i++)
         for (int j = 0; j < num - 1 - i; j++)
-            if (dist[sorted[i]] > dist[sorted[j]]) {
-                tmp = sorted[i];
-                sorted[i] = sorted[j];
-                sorted[j] = tmp;
+            if (bak[j] > bak[j+1]) {
+                swap(&(sorted[j]), &(sorted[j+1]));
+                swap(&(bak[j]), &(bak[j+1]));
             }
     // debug
     printf("dist list:\n");
-    for (int i = 0; i < num; i++) printf("%2d ", dist[i]);
+    for (int i = 0; i < num; i++) printf("%3d ", dist[i]);
     printf("\n");
-    for (int i = 0; i < num; i++) printf("%2d ", sorted[i]);
+    for (int i = 0; i < num; i++) printf("%3d ", sorted[i]);
     printf("\n");
     // translate path to router table
     // Since local rtable has been loaded from kernel already,
@@ -519,14 +550,27 @@ void path2rtable(int num) {
 void database2rtable(){
     int num = database2graph();
     caculate_shortest_path(num);
+    printf("prev:\n");
+    for (int i = 0; i < num; i++) {
+        printf("%d: %3d\n", i, prev[i]);
+        // if(prev[-1] != -1)
+        //     printf("%d: "IP_FMT"\n",i, HOST_IP_FMT_STR(num2id[prev[i]]));
+        // else
+        //     printf("%d: "IP_FMT"\n",i, HOST_IP_FMT_STR(num2id[0]));
+    }
+    printf("\n");
     path2rtable(num);
 }
 
 // codes 
 void init_graph() {
     for (int i = 0; i < MAX_NODE_NUM; i++)
-        for (int j = 0; j < MAX_NODE_NUM; j++)
-            graph[i][j] = -1;
+        for (int j = 0; j < MAX_NODE_NUM; j++) {
+            if(i != j)
+                graph[i][j] = INT_MAX;
+            else
+                graph[i][j] = 0;
+        }
 }
 
 int id2num(int rid, int num) {
@@ -538,27 +582,6 @@ int id2num(int rid, int num) {
         }
     }
     return rank;
-}
-
-int is_connected(u32 rid1, u32 rid2) {
-    int is_connected = 0;
-    iface_info_t *iface = NULL;
-    mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
-    if (!list_empty(&mospf_db)) {
-        list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list)
-            if (db_entry->rid == rid2)
-                break;
-    }
-    list_for_each_entry(iface, &(instance->iface_list), list) {
-        for (int i = 0; i < db_entry->nadv; i++) {
-            if (db_entry->array[i].subnet == (iface->ip & iface->mask)) {
-                is_connected = 1;
-                break;
-            }
-        }
-        if (is_connected) break;
-    }
-    return is_connected;
 }
 
 int is_in_rtable(u32 subnet) {
