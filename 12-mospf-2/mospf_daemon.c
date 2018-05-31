@@ -3,7 +3,7 @@
 // Author        : wujiahao
 // Email         : wujiahao15@mails.ucas.ac.cn
 // Created  Time : 2018-05-29 21:09:12
-// Modified Time : 2018-05-30 18:02:33
+// Modified Time : 2018-05-31 11:32:51
 /*---------------------------------------------------*/
 
 #include "mospf_daemon.h"
@@ -13,6 +13,7 @@
 
 #include "ip.h"
 #include "packet.h"
+#include "rtable.h"
 
 #include "list.h"
 #include "log.h"
@@ -77,6 +78,8 @@ void *generating_mospf_rtable(void *param){
         sleep(10);
         printf("\n================= database2rtable - Start =========================\n");
         database2rtable();
+        printf("======== Print Rtable ==========\n");
+        print_rtable();
         printf("\n================= database2rtable - End   =========================\n");
     }
     return NULL;
@@ -463,9 +466,12 @@ int min_dist(int num) {
 
 void caculate_shortest_path(int num) {
     for (int i = 0; i < num; i++) {
-        prev[i] = -1;
-        dist[i] = graph[0][i];
         visited[i] = false;
+        dist[i] = graph[0][i];
+        if (dist[i] == INT_MAX || dist[i] == 0)
+            prev[i] = -1;
+        else
+            prev[i] = 0;
     }
 
     dist[0] = 0;
@@ -475,19 +481,13 @@ void caculate_shortest_path(int num) {
     for (int i = 0; i < num - 1; i++) {
         u = min_dist(num);
         visited[u] = true;
-        printf("min = %d\n", dist[u]);
+        // printf("min = %d\n", dist[u]);
         for (int v = 0; v < num; v++) {
-            printf("graph[u][v] = %d\n", graph[u][v]);
+            // printf("graph[u][v] = %d\n", graph[u][v]);
             if (NEED_UPDATE_PATH(visited, graph, dist, u, v)) {
-                printf("update\n");
                 dist[v] = dist[u] + graph[u][v];
                 prev[v] = u;
             }
-            // tmp = ((graph[u][v] == INT_MAX) ? INT_MAX : (dist[u] + graph[u][v]));
-            // if ((visited[v] == false) && (tmp < dist[v])) {
-            //     dist[v] = tmp;
-            //     prev[v] = u;
-            // }
         }
     }
 }
@@ -519,27 +519,35 @@ void path2rtable(int num) {
     // translate path to router table
     // Since local rtable has been loaded from kernel already,
     // we do not need to generate it again.
-    // So we focus on translate rt_entry to other routers
+    // So we focus on translate to rt_entry pointing to other routers
     iface_info_t *iface = NULL;
     rt_entry_t * new_entry = NULL;
     mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
-    for (int i = 0; i < num; i++)
-        if(prev[i] == -1)
-            s = i;
     u32 gw = 0, dest = 0;
     for (int i = 0; i < num; i++) {
         if (prev[sorted[i]] != -1) {
+            // printf("prev[%d] != -1\n", sorted[i]);
             if (!list_empty(&mospf_db))
                 list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list){
+                    // printf("db_entry.\n");
                     for (int j = 0; j < db_entry->nadv; j++)
                         if (!is_in_rtable(db_entry->array[j].subnet)) {
+                            // printf("not in rtable yet.\n");
+                            printf("sorted[%d] = %d\n", i, sorted[i]);
+                            printf("rid = "IP_FMT"\n",HOST_IP_FMT_STR(db_entry->rid));
                             dest = db_entry->array[j].subnet;
-                            hop  = prev[sorted[i]];
-                            while(prev[hop] != s)
+                            // hop = sorted[i];
+                            hop = id2num(db_entry->rid, num);
+                            while(prev[hop] != s) {
                                 hop = prev[hop];
+                            }
+                            printf("hop = %d\n", hop);
                             gw = num2id[hop];
-                            get_iface(gw, iface);
+                            printf("gw = "IP_FMT"\n", HOST_IP_FMT_STR(gw));
+                            iface = get_iface(gw);
+                            // printf("generate new entry.\n");
                             new_entry = new_rt_entry(dest, iface->mask, gw, iface);
+                            // printf("add new entry.\n");
                             add_rt_entry(new_entry);
                         }
                 }
@@ -550,15 +558,10 @@ void path2rtable(int num) {
 void database2rtable(){
     int num = database2graph();
     caculate_shortest_path(num);
-    printf("prev:\n");
-    for (int i = 0; i < num; i++) {
-        printf("%d: %3d\n", i, prev[i]);
-        // if(prev[-1] != -1)
-        //     printf("%d: "IP_FMT"\n",i, HOST_IP_FMT_STR(num2id[prev[i]]));
-        // else
-        //     printf("%d: "IP_FMT"\n",i, HOST_IP_FMT_STR(num2id[0]));
-    }
-    printf("\n");
+    // printf("prev:\n");
+    // for (int i = 0; i < num; i++)
+    //     printf("%d: %3d\n", i, prev[i]);
+    // printf("\n");
     path2rtable(num);
 }
 
@@ -595,8 +598,9 @@ int is_in_rtable(u32 subnet) {
     return is_in;
 }
 
-void get_iface(u32 rid, iface_info_t *iface) {// get forward iface
+iface_info_t *get_iface(u32 rid) {// get forward iface
     int is_connected = 0;
+    iface_info_t *iface = NULL;
     mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
     if (!list_empty(&mospf_db)) {
         list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list)
@@ -612,4 +616,5 @@ void get_iface(u32 rid, iface_info_t *iface) {// get forward iface
         }
         if (is_connected) break;
     }
+    return iface;
 }
