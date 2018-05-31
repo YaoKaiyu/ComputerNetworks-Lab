@@ -3,13 +3,14 @@
 
 #include "base.h"
 #include "list.h"
-
+#include <time.h>
 #include "mospf_proto.h"
 
 extern struct list_head mospf_db;
 
 typedef struct {
 	struct list_head list;
+    time_t  alive;
 	u32	rid;
 	u16	seq;
 	int nadv;

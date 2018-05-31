@@ -18,6 +18,7 @@
 #include "list.h"
 #include "log.h"
 
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -59,26 +60,57 @@ void *sending_mospf_lsu_thread(void *param);
 void *checking_nbr_thread(void *param);
 void *dumping_database(void *param);
 void *generating_mospf_rtable(void *param);
+void *checking_database_thread(void *param);
 
 void send_mospf_lsu();
 void shortest_path_to_rtable();
 void caculate_shortest_path();
 
 void mospf_run() {
-    pthread_t hello, lsu, nbr, db, rtable;
+    pthread_t hello, lsu, nbr, db, check_db, rtable;
     pthread_create(&hello, NULL, sending_mospf_hello_thread, NULL);
     pthread_create(&lsu, NULL, sending_mospf_lsu_thread, NULL);
     pthread_create(&nbr, NULL, checking_nbr_thread, NULL);
     // pthread_create(&db, NULL, dumping_database, NULL);
+    pthread_create(&check_db, NULL, checking_database_thread, NULL);
     pthread_create(&rtable, NULL, generating_mospf_rtable, NULL);
+}
+
+void *checking_database_thread(void * param) {
+    time_t now = 0;
+    rt_entry_t * rt_entry = NULL, * rt_entry_q = NULL;
+    mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
+    while (1) {
+        if (!list_empty(&mospf_db)) {
+            pthread_mutex_lock(&mospf_lock);
+            now = time(NULL);
+            list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list) {
+                if((now-db_entry->alive) >= 20){
+                    list_for_each_entry_safe(rt_entry, rt_entry_q, &rtable, list) {
+                        if(rt_entry->gw != 0)
+                            remove_rt_entry(rt_entry);
+                    }    
+                    // printf("After delete:\n");
+                    // print_rtable();
+                    // printf("Delete db entry.\n");
+                    free(db_entry->array);
+                    list_delete_entry(&(db_entry->list));
+                }
+            }
+            pthread_mutex_unlock(&mospf_lock);
+        } else
+            printf("Database is now empty.\n");
+        sleep(1);
+    }
+    return NULL;
 }
 
 void *generating_mospf_rtable(void *param){
     while(1){
-        sleep(10);
+        sleep(5);
         printf("\n================= database2rtable - Start =========================\n");
         database2rtable();
-        printf("======== Print Rtable ==========\n");
+        printf("================ Print Rtable =================\n");
         print_rtable();
         printf("\n================= database2rtable - End   =========================\n");
     }
@@ -326,9 +358,10 @@ void handle_mospf_lsu(iface_info_t *iface, char *packet, int len) {
             if (db_entry->rid == ntohl(mospf->rid)) {
                 found = 1;
                 if (db_entry->seq < ntohs(lsu->seq)) { // packet seq is bigger, update lsa
-                    db_entry->rid  = ntohl(mospf->rid);
-                    db_entry->seq  = ntohs(lsu->seq);
-                    db_entry->nadv = ntohl(lsu->nadv);
+                    db_entry->alive = time(NULL);
+                    db_entry->rid   = ntohl(mospf->rid);
+                    db_entry->seq   = ntohs(lsu->seq);
+                    db_entry->nadv  = ntohl(lsu->nadv);
                     for (int i = 0; i < db_entry->nadv; i++, lsa++) {
                         db_entry->array[i].subnet = ntohl(lsa->subnet);
                         db_entry->array[i].mask   = ntohl(lsa->mask);
@@ -343,6 +376,7 @@ void handle_mospf_lsu(iface_info_t *iface, char *packet, int len) {
     // create a new db entry
     if (!found) {
         mospf_db_entry_t * new_db_entry = (mospf_db_entry_t *)malloc(MOSPF_DB_ENTRY_SIZE);
+        new_db_entry->alive = time(NULL);
         new_db_entry->rid   = ntohl(mospf->rid);
         new_db_entry->seq   = ntohs(lsu->seq);
         new_db_entry->nadv  = ntohl(lsu->nadv);
@@ -440,15 +474,15 @@ int database2graph() {
             }
         }
     }
-    for(int i = 0; i < num; i++) {
-        printf("%d: "IP_FMT"\n", i, HOST_IP_FMT_STR(num2id[i]));
-    }
-    printf("graph:\n");
-    for(int i = 0; i < num; i++) {
-        for(int j = 0; j < num; j++)
-            printf("%2d ", graph[i][j]);
-        printf("\n");
-    }
+    // for(int i = 0; i < num; i++) {
+    //     printf("%d: "IP_FMT"\n", i, HOST_IP_FMT_STR(num2id[i]));
+    // }
+    // printf("graph:\n");
+    // for(int i = 0; i < num; i++) {
+    //     for(int j = 0; j < num; j++)
+    //         printf("%2d ", graph[i][j]);
+    //     printf("\n");
+    // }
     return num;
 }
 
@@ -477,13 +511,11 @@ void caculate_shortest_path(int num) {
     dist[0] = 0;
     visited[0] = true;
 
-    int u = 0, tmp = 0;
+    int u = 0;
     for (int i = 0; i < num - 1; i++) {
         u = min_dist(num);
         visited[u] = true;
-        // printf("min = %d\n", dist[u]);
         for (int v = 0; v < num; v++) {
-            // printf("graph[u][v] = %d\n", graph[u][v]);
             if (NEED_UPDATE_PATH(visited, graph, dist, u, v)) {
                 dist[v] = dist[u] + graph[u][v];
                 prev[v] = u;
@@ -511,11 +543,11 @@ void path2rtable(int num) {
                 swap(&(bak[j]), &(bak[j+1]));
             }
     // debug
-    printf("dist list:\n");
-    for (int i = 0; i < num; i++) printf("%3d ", dist[i]);
-    printf("\n");
-    for (int i = 0; i < num; i++) printf("%3d ", sorted[i]);
-    printf("\n");
+    // printf("dist list:\n");
+    // for (int i = 0; i < num; i++) printf("%3d ", dist[i]);
+    // printf("\n");
+    // for (int i = 0; i < num; i++) printf("%3d ", sorted[i]);
+    // printf("\n");
     // translate path to router table
     // Since local rtable has been loaded from kernel already,
     // we do not need to generate it again.
@@ -526,28 +558,16 @@ void path2rtable(int num) {
     u32 gw = 0, dest = 0;
     for (int i = 0; i < num; i++) {
         if (prev[sorted[i]] != -1) {
-            // printf("prev[%d] != -1\n", sorted[i]);
             if (!list_empty(&mospf_db))
                 list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list){
-                    // printf("db_entry.\n");
                     for (int j = 0; j < db_entry->nadv; j++)
                         if (!is_in_rtable(db_entry->array[j].subnet)) {
-                            // printf("not in rtable yet.\n");
-                            printf("sorted[%d] = %d\n", i, sorted[i]);
-                            printf("rid = "IP_FMT"\n",HOST_IP_FMT_STR(db_entry->rid));
                             dest = db_entry->array[j].subnet;
-                            // hop = sorted[i];
                             hop = id2num(db_entry->rid, num);
-                            while(prev[hop] != s) {
+                            while(prev[hop] != s)
                                 hop = prev[hop];
-                            }
-                            printf("hop = %d\n", hop);
-                            gw = num2id[hop];
-                            printf("gw = "IP_FMT"\n", HOST_IP_FMT_STR(gw));
-                            iface = get_iface(gw);
-                            // printf("generate new entry.\n");
+                            iface = get_iface_and_gw(num2id[hop], &gw);
                             new_entry = new_rt_entry(dest, iface->mask, gw, iface);
-                            // printf("add new entry.\n");
                             add_rt_entry(new_entry);
                         }
                 }
@@ -558,10 +578,6 @@ void path2rtable(int num) {
 void database2rtable(){
     int num = database2graph();
     caculate_shortest_path(num);
-    // printf("prev:\n");
-    // for (int i = 0; i < num; i++)
-    //     printf("%d: %3d\n", i, prev[i]);
-    // printf("\n");
     path2rtable(num);
 }
 
@@ -598,23 +614,19 @@ int is_in_rtable(u32 subnet) {
     return is_in;
 }
 
-iface_info_t *get_iface(u32 rid) {// get forward iface
+iface_info_t *get_iface_and_gw(u32 rid, u32 *gw) {// get forward iface
     int is_connected = 0;
     iface_info_t *iface = NULL;
-    mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
-    if (!list_empty(&mospf_db)) {
-        list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list)
-            if (db_entry->rid == rid)
-                break;
-    }
-    list_for_each_entry(iface, &(instance->iface_list), list) {
-        for (int i = 0; i < db_entry->nadv; i++) {
-            if (db_entry->array[i].subnet == (iface->ip & iface->mask)) {
+    mospf_nbr_t *nbr = NULL, *nbr_q = NULL;
+    list_for_each_entry(iface, & (instance->iface_list), list) {
+        list_for_each_entry_safe(nbr, nbr_q, &(iface->nbr_list), list) {
+            if (nbr->nbr_id == rid) {
                 is_connected = 1;
+                *gw = nbr->nbr_ip;
                 break;
             }
         }
-        if (is_connected) break;
+        if(is_connected) break;
     }
     return iface;
 }

@@ -55,10 +55,10 @@ if __name__ == '__main__':
         r.cmd('./scripts/disable_icmp.sh')
         r.cmd('./scripts/disable_ip_forward.sh')
 
-    # r1.cmd('./mospfd > r1-output.txt &')
-    # r2.cmd('./mospfd > r2-output.txt &')
-    # r3.cmd('./mospfd > r3-output.txt &')
-    # r4.cmd('./mospfd > r4-output.txt &')
+    r1.cmd('./mospfd > r1-output.txt &')
+    r2.cmd('./mospfd > r2-output.txt &')
+    r3.cmd('./mospfd > r3-output.txt &')
+    r4.cmd('./mospfd > r4-output.txt &')
 
     net.start()
     CLI(net)
