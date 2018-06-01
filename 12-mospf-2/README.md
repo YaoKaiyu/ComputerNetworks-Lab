@@ -1,6 +1,6 @@
 # 实验12 · 网络路由实验二
 
-#### 吴嘉皓 2015K8009915007
+#### 吴嘉皓
 
 ## 一、实验内容
 
@@ -16,7 +16,7 @@
 ### （一）代码目录
 
 ```bash
-2015K8009915007_吴嘉皓_12.tar.gz
+		吴嘉皓_12.tar.gz
 		├── 12-mospf-2  # 代码工程目录
 		└──实验12-网络路由实验二·实验报告.pdf
 ```
@@ -40,18 +40,18 @@ h1> traceroute 10.0.6.22
 
 * 本次实验的拓扑图
 
-![image-20180601082234931](/Users/apple/Learning/CS/CN/Lab/12/1.png)
+![0](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/1.png)
 
 * 实验结果图
   * 完整链路的`traceroute`的结果(存在两种结果)
 
-  ![2](/Users/apple/Learning/CS/CN/Lab/12/2.png)
+  ![1](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/2.png)
 
-  ![image-20180601083502254](/Users/apple/Learning/CS/CN/Lab/12/4.png)
+  ![2](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/3.png)
 
   * `link r2 r4 down`之后的`traceroute`的结果
 
-  ![3](/Users/apple/Learning/CS/CN/Lab/12/3.png)
+  ![3](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/4.png)
 
 ## 四、结果分析
 
@@ -66,21 +66,10 @@ h1> traceroute 10.0.6.22
 
     所以根据`Dijkstra算法`会存在以下两种路径：
 
-①
+①  ![4](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/7.png)
 
-  ```mermaid
-  graph LR
-  	A(Router 1) -->B(Router 2)
-  	A -->C(Router 3)
-      B -->D(Router 4)
-  ```
-②
-  ```mermaid
-  graph LR
-  	A(Router 1) -->B(Router 2)
-  	A -->C(Router 3)
-      C -->D(Router 4)
-  ```
+
+②  ![5](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/8.png)
 
 * 在`link r2 r4 down`之后
 
@@ -88,13 +77,13 @@ h1> traceroute 10.0.6.22
 
   * 因此，相应一致性数据库的lsa表项会发生改变（以`r4`为例）
 
-    * 完整链路状态下的数据库如下：
+   * 完整链路状态下的数据库如下：
 
-      ![image-20180601085503634](/Users/apple/Learning/CS/CN/Lab/12/6.png)
+      ![6](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/5.png)
 
-    * 断开r2和r4之后的数据库如下：
+   * 断开r2和r4之后的数据库如下：
 
-      ![image-20180601085434877](/Users/apple/Learning/CS/CN/Lab/12/5.png)
+      ![7](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/12/6.png)
 
   * 由上述的数据库打印信息可知，在断开`r2`和`r4`之后，数据库中r2的邻居为r4的表项已经不存在了
 
@@ -136,7 +125,7 @@ h1> traceroute 10.0.6.22
 
 * `int database2graph()`
   * 函数功能：将生成的一致性数据库转换为拓扑图的邻接矩阵表示；
-    * 根据数据库中的lsa（邻居）来确定两个路由节点是否相邻；
+   * 根据数据库中的lsa（邻居）来确定两个路由节点是否相邻；
   * 返回值：`int`型变量，返回的是路由节点的个数；
 
   ```c
@@ -202,11 +191,11 @@ h1> traceroute 10.0.6.22
 * `void path2rtable(int num)`
 
   * 函数功能：根据生成的最短路径生成路由表；
-    * 对已经生成的`dist`进行升序排序；
-    * 从小到大遍历路由节点：
-      * 根据`prev`数组，得到源节点到该节点的**下一跳节点**的节点id；
-      * 调用`get_iface_and_gw`来确定gw和iface；
-      * 生成新的路由表表项，并添加至路由表；
+   * 对已经生成的`dist`进行升序排序；
+   * 从小到大遍历路由节点：
+    * 根据`prev`数组，得到源节点到该节点的**下一跳节点**的节点id；
+    * 调用`get_iface_and_gw`来确定gw和iface；
+    * 生成新的路由表表项，并添加至路由表；
   * 函数参数：`int`型，为路由节点的个数；
 
   ``` c
@@ -253,9 +242,9 @@ h1> traceroute 10.0.6.22
 * `iface_info_t *get_iface_and_gw(u32 rid, u32 *gw)`
 
   * 函数功能：根据提供的`rid`来确定与之对应的`gw`和`iface`
-    * 遍历本节点iface列表及其邻居列表
-    * 当邻居rid和传入rid相同时，匹配
-    * 将gw设置为该邻居的ip
+   * 遍历本节点iface列表及其邻居列表
+   * 当邻居rid和传入rid相同时，匹配
+   * 将gw设置为该邻居的ip
 
   ``` C
   iface_info_t *get_iface_and_gw(u32 rid, u32 *gw) {// get forward iface
@@ -278,31 +267,31 @@ h1> traceroute 10.0.6.22
 
 * `void *checking_database_thread(void * param)`
   * 函数功能：数据库表项的老化线程
-    * 如果数据库表项超过20秒没有改动，则将其删去，并清空路由表；  
+   * 如果数据库表项超过20秒没有改动，则将其删去，并清空路由表；  
   ```c
-void *checking_database_thread(void * param) {
-    time_t now = 0;
-    rt_entry_t * rt_entry = NULL, * rt_entry_q = NULL;
-    mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
-    while (1) {
-        if (!list_empty(&mospf_db)) {
-            pthread_mutex_lock(&mospf_lock);
-            now = time(NULL);
-            list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list) 
-                if((now-db_entry->alive) >= 20){
-                    list_for_each_entry_safe(rt_entry, rt_entry_q, &rtable, list) 
-                        if(rt_entry->gw != 0)
-                            remove_rt_entry(rt_entry);
-                    free(db_entry->array);
-                    list_delete_entry(&(db_entry->list));
-                }
-            pthread_mutex_unlock(&mospf_lock);
-        } else
-            printf("Database is now empty.\n");
-        sleep(1);
-    }
-    return NULL;
-}
+	void *checking_database_thread(void * param) {
+	    time_t now = 0;
+	    rt_entry_t * rt_entry = NULL, * rt_entry_q = NULL;
+	    mospf_db_entry_t * db_entry = NULL, * db_entry_q = NULL;
+	    while (1) {
+		if (!list_empty(&mospf_db)) {
+		    pthread_mutex_lock(&mospf_lock);
+		    now = time(NULL);
+		    list_for_each_entry_safe(db_entry, db_entry_q, &mospf_db, list) 
+			if((now-db_entry->alive) >= 20){
+			    list_for_each_entry_safe(rt_entry, rt_entry_q, &rtable, list) 
+				if(rt_entry->gw != 0)
+				    remove_rt_entry(rt_entry);
+			    free(db_entry->array);
+			    list_delete_entry(&(db_entry->list));
+			}
+		    pthread_mutex_unlock(&mospf_lock);
+		} else
+		    printf("Database is now empty.\n");
+		sleep(1);
+	    }
+	    return NULL;
+	}
   ```
 
 
