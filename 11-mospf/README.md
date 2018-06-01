@@ -43,7 +43,7 @@ mininet> exit
 
 * 图一：实验数据库结果输出
 
-![image-1](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/11/1.png)
+![image-1](https://github.com/framywhale/ComputerNetworks-Lab/blob/master/src/11/1-1.png)
 
 * 图一中的输出结果格式为:
 > **rid** 
